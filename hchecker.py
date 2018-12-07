@@ -2,63 +2,57 @@
 
 from __future__ import print_function
 
+import argparse
+import datetime
+import json
 import psutil
+import time
 
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
 
-def secs2hours(secs):
-    mm, ss = divmod(secs, 60)
-    hh, mm = divmod(mm, 60)
-    return "%d:%02d:%02d" % (hh, mm, ss)
+METRICS = {}
 
+def main(ticks, delay):
 
-def main():
-    if hasattr(psutil, "sensors_temperatures"):
+    global METRICS
+    for _ in range(ticks):
+        now = datetime.datetime.now()
         temps = psutil.sensors_temperatures()
-    else:
-        temps = {}
-    if hasattr(psutil, "sensors_fans"):
-        fans = psutil.sensors_fans()
-    else:
-        fans = {}
-    if hasattr(psutil, "sensors_battery"):
-        battery = psutil.sensors_battery()
-    else:
-        battery = None
+        for name in temps.keys():
+            if name in temps:
+                for entry in temps[name]:
+                    label = entry.label or name
+                    temp = entry.current
+                    elem = {
+                        "current": entry.current,
+                        "time": now
+                    }
+                    if METRICS.get(label):
+                        METRICS[label].append(elem)
+                    else:
+                        METRICS[label] = [elem]
+        time.sleep(delay)
+    labels = METRICS.keys()
+    metrics = METRICS.values()
+    ax = plt.subplot()
+    for label, metric in zip(labels, metrics):
+        xs = [m['time'] for m in metric]
+        ys = [m['current'] for m in metric]
 
-    if not any((temps, fans, battery)):
-        print("can't read any temperature, fans or battery info")
-        return
+        ax.plot(xs, ys, label=label)
+    ax.get_xaxis().set_major_formatter(mdates.DateFormatter("%M:%S"))
+    ax.legend(loc="lower left", shadow=False, fontsize="xx-small")
+    plt.show()
 
-    names = set(list(temps.keys()) + list(fans.keys()))
-    for name in names:
-        print(name)
-        # Temperatures.
-        if name in temps:
-            print("    Temperatures:")
-            for entry in temps[name]:
-                print("        %-20s %s°C (high=%s°C, critical=%s°C)" % (
-                    entry.label or name, entry.current, entry.high,
-                    entry.critical))
-        # Fans.
-        if name in fans:
-            print("    Fans:")
-            for entry in fans[name]:
-                print("        %-20s %s RPM" % (
-                    entry.label or name, entry.current))
 
-    # Battery.
-    if battery:
-        print("Battery:")
-        print("    charge:     %s%%" % round(battery.percent, 2))
-        if battery.power_plugged:
-            print("    status:     %s" % (
-                "charging" if battery.percent < 100 else "fully charged"))
-            print("    plugged in: yes")
-        else:
-            print("    left:       %s" % secs2hours(battery.secsleft))
-            print("    status:     %s" % "discharging")
-            print("    plugged in: no")
+PARSER = argparse.ArgumentParser(description='Meansure core temps.')
+PARSER.add_argument('--ticks', nargs='?', default=10, type=int,
+                    help='Count of checks.')
+PARSER.add_argument('--delay', nargs='?', default=1, type=float,
+                    help='Delay between checks.')
 
 
 if __name__ == '__main__':
-    main()
+    ARGS = PARSER.parse_args()
+    main(ARGS.ticks, ARGS.delay)
